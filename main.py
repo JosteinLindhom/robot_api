@@ -1,4 +1,3 @@
-import threading
 import time
 import api
 
@@ -17,4 +16,3 @@ def on_message(api: api.Robot, value):
 
 rob = api.Robot(ip='127.0.0.1', port=80, user='Admin')
 rob.subscribe(VARIABLE, on_message=on_message)
-
