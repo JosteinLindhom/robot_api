@@ -49,6 +49,9 @@ class RobWebSocketClient(WebSocketClient):
 
     def start(self):
         self.connect()
+        resp, code = self.api.get_rapid_variable(url=self.variable_url)
+        value = resp['state'][0]['value']
+        self.on_message(self.api, value)
         self.run_forever()
 
 class Robot:
@@ -195,7 +198,7 @@ class Robot:
 
         try:
             
-            resp = self.conn.post("https://127.0.0.1:80/", auth=basic_auth, headers=self.header, verify=False)
+            resp = self.conn.post(self.url, auth=basic_auth, headers=self.header, verify=False)
             logger.info('Login: Done!')
 
             session = resp.cookies['-http-session-']
