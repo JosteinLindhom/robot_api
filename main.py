@@ -1,18 +1,20 @@
 import time
-import api
+import robcomm
 
 VARIABLE = "T_ROB1/TTBmain/waiting"
 VARIABLE_2 = "T_ROB1/TTBmain/Sval"
 
-def on_message(api: api.Robot, value):
+WAIT_TIME = 5
+
+def on_message(robcomm: robcomm.Robot, value):
         if value == 'TRUE':
             print("Robot stopped while waiting for signal from Python")
-            print("Continuing in 5 seconds")
-            for x in range(4, -1, -1):
+            print(f'Continuing in {WAIT_TIME} seconds')
+            for x in range(WAIT_TIME - 1, -1, -1):
                 time.sleep(1)
                 print(x, "...")
             print("Continuing")
-            api.set_rapid_variable(VARIABLE, False)
+            robcomm.set_rapid_variable(VARIABLE, False)
 
-rob = api.Robot(ip='127.0.0.1', port=80, user='Admin')
+rob = robcomm.Robot(ip='152.94.0.228', port=443, user='Admin')
 rob.subscribe(VARIABLE, on_message=on_message)
