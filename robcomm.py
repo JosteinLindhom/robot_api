@@ -7,6 +7,7 @@ import logging
 import requests
 from requests.auth import HTTPBasicAuth
 from ws4py.client.threadedclient import WebSocketClient
+import xml.etree.ElementTree as ET
 from ws4py.messaging import TextMessage
 from models import Task, Module
 import urllib3
@@ -28,11 +29,12 @@ logger = logging.getLogger('ability_tool')
 
 
 class RobWebSocketClient(WebSocketClient):
-    def __init__(self, url, headers, api, varurl, on_message=None):
+    def __init__(self, url, headers, api, on_message=None):
         super().__init__(url,protocols=['rws_subscription'], headers=headers)
         self.on_message: callable = on_message
         self.api: Robot = api
-        self.variable_url = varurl
+        self.namespace = '{http://www.w3.org/1999/xhtml}'
+        self.variables = []
 
     def opened(self):
         logger.info('Opened Websocket')
@@ -41,17 +43,30 @@ class RobWebSocketClient(WebSocketClient):
         logger.info('Closed Websocket')
 
     def received_message(self, message: TextMessage):
-        if self.on_message:
-            print(self.variable_url)
-            resp, code = self.api.get_rapid_variable(url=self.variable_url)
+        if not message.is_text:
+            print("Not text", message)
+            return
+        root = ET.fromstring(message.data.decode("utf-8"))
+        # Find variable url in message
+        if root.findall(".//{0}li[@class='rap-value-ev']".format(self.namespace)):
+            url = root.find(".//{0}li[@class='rap-value-ev']/{0}a".format(self.namespace)).attrib['href']
+            if not url:
+                print("No url found in message")
+                return
+            resp, code = self.api.get_rapid_variable(url=url)
             value = resp['state'][0]['value']
-            self.on_message(self.api, value)
+            self.on_message(self.api, url, value)
 
     def start(self):
         self.connect()
-        resp, code = self.api.get_rapid_variable(url=self.variable_url)
-        value = resp['state'][0]['value']
-        self.on_message(self.api, value)
+        if self.on_message:
+            # Get initial values for all variables when connection is established
+            # and call on_message for each variable
+            for variable in self.variables:
+                url = f"/rw/rapid/symbol/RAPID/{variable}/data"
+                resp, code = self.api.get_rapid_variable(variable=variable)
+                value = resp['state'][0]['value']
+                self.on_message(self.api, url, value)
         self.run_forever()
 
 class Robot:
@@ -66,6 +81,7 @@ class Robot:
         self.url = self.proto + self.ip + ':' + str(self.port)
         self.conn = requests.Session()
         self.has_mastership = False
+        self.login()
 
     def __str__(self):
         s = 'The object of class "Robot" contains:\n'
@@ -88,18 +104,26 @@ class Robot:
             match method:
                 case 'GET':
                     resp = self.conn.get(url, headers=self.header, auth=basic_auth, verify=False)        
+                    return json.loads(resp.content), resp.status_code
                 case 'POST':
                     resp = self.conn.post(url, data=data, headers=self.header, auth=basic_auth, verify=False)
                 case _:
                     raise Exception("Method not supported")
 
-            return json.loads(resp.content), resp.status_code
 
         except Exception as error:
-            logger.info('Error: %s', error)
+            logger.info('! Error: %s', error)
             time.sleep(1)
         
         return None, None
+
+    def login(self):
+            resp = self.conn.post(self.url, auth=basic_auth, headers=self.header, verify=False)
+            logger.info('Login: Done!')
+            session = resp.cookies['-http-session-']
+            ABBCX = resp.cookies['ABBCX']
+            self.cookie = f'-http-session-={session}; ABBCX={ABBCX}'
+            logger.info('Cookie: %s', self.cookie)
 
     def list_rapid_variables(self):
         ...
@@ -179,12 +203,12 @@ class Robot:
             self.has_mastership = False
             logger.info("You have released mastership")
 
-    def subscribe(self, variable, on_message: callable=None):
+    def subscribe(self, variables: list[str], on_message: callable=None):
         """
-            Subscribes to the given variable and calls the on_message function when a message is received.
+            Subscribes to the given variables and calls the on_message function when a message is received.
             The `on_message` function receives the updated value of the variable.
 
-            @param variable: The variable to subscribe to. The variable must be a valid *path* to a Rapid variable.
+            @param variables: The variables to subscribe to. Each variable must be a valid *path* to a RAPID variable.
             Example: `T_ROB1/main/Flag` for the variable `Flag` in the task `T_ROB1` in the `main` module.
             
             @param on_message: The function to call when a message is received.
@@ -192,21 +216,16 @@ class Robot:
         """
 
         # Variable API endpoint
-        uri = "/rw/rapid/symbol/RAPID/" + variable + "/data"
-        subscription_uri = uri + ";value"
-        data = f'resources=2&2={subscription_uri}&2-p=1'
+        payload = {}
+        payload['resources'] = [str(i) for i in range(1, len(variables) + 1)]
+        for i, variable in enumerate(variables):
+            uri = "/rw/rapid/symbol/RAPID/" + variable + "/data;value"
+            payload[str(i + 1)] = uri
+            payload[f'{i + 1}-p'] = '1'
 
+        print(payload)
         try:
-            
-            resp = self.conn.post(self.url, auth=basic_auth, headers=self.header, verify=False)
-            logger.info('Login: Done!')
-
-            session = resp.cookies['-http-session-']
-            ABBCX = resp.cookies['ABBCX']
-            cookie = f'-http-session-={session}; ABBCX={ABBCX}'
-            logger.info('Cookie: %s', cookie)
-
-            resp = self.conn.post(self.url + '/subscription', headers=self.header, auth=basic_auth, data=data)
+            resp = self.conn.post(self.url + '/subscription', headers=self.header, auth=basic_auth, data=payload)
 
             # Status code 201 means that the subscription was successful
             if resp.status_code != 201:
@@ -214,10 +233,12 @@ class Robot:
                 logger.info('Error: %s', resp.status_code)
                 return
             logger.info('Successfully subscribed to %s', variable)
-            websock_headers = [('Cookie', cookie)]
+            websock_headers = [('Cookie', self.cookie)]
             
             # Initialize and start the websocket
-            robwebscoket = RobWebSocketClient(resp.headers['location'], websock_headers, self, uri, on_message=on_message)
+            robwebscoket = RobWebSocketClient(resp.headers['location'], websock_headers, self, on_message=on_message)
+            for variable in variables:
+                robwebscoket.variables.append(variable)
             robwebscoket.start()
 
         except Exception as error:
