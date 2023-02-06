@@ -1,0 +1,4 @@
+dacite==1.7.0
+requests==2.22.0
+urllib3==1.25.8
+ws4py==0.5.1
