@@ -107,8 +107,11 @@ class Robot:
             url = self.url + rq
             match method:
                 case 'GET':
-                    resp = self.conn.get(url, headers=self.header, auth=basic_auth, verify=False)        
-                    return json.loads(resp.content), resp.status_code
+                    resp = self.conn.get(url, headers=self.header, auth=basic_auth, verify=False)
+                    if len(resp.content) > 0:
+                        return json.loads(resp.content), resp.status_code
+                    else:
+                        return None, resp.status_code
                 case 'POST':
                     resp = self.conn.post(url, data=data, headers=self.header, auth=basic_auth, verify=False)
                 case _:
@@ -116,8 +119,7 @@ class Robot:
 
 
         except Exception as error:
-            logger.info('! Error: %s', error)
-            time.sleep(1)
+            logger.error(f"Error: {error}")
         
         return None, None
 
