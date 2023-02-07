@@ -46,7 +46,6 @@ class RobWebSocketClient(WebSocketClient):
 
     def received_message(self, message: TextMessage):
         if not message.is_text:
-            print("Not text", message)
             return
         root = ET.fromstring(message.data.decode("utf-8"))
         # Find variable url in message
@@ -55,8 +54,7 @@ class RobWebSocketClient(WebSocketClient):
             if not url:
                 print("No url found in message")
                 return
-            resp, code = self.api.get_rapid_variable(url=url)
-            value = resp['state'][0]['value']
+            value = self.api.get_rapid_variable(url=url)
             self.on_message(self.api, url, value)
 
     def start(self):
@@ -155,7 +153,6 @@ class Robot:
                 logger.info("You do not have mastership")
         return wrapper
 
-    #@requires_mastership
     def get_tasks(self) -> list:
         content, code = self.__GET("/rw/rapid/tasks")
         # Unmarshal the received JSON into a list of Task objects
@@ -184,7 +181,6 @@ class Robot:
     def get_module_routines(self, task_name, module_name) -> list:
         pp(self.__GET("/rw/rapid/tasks/" + task_name + "/modules/" + module_name + "/routine" + "?row=0&column=0"))
 
-    #@requires_mastership
     def set_rapid_variable(self, variable, value):
         """ 
         Set a Rapid Variable with the given value.\n
