@@ -1,36 +1,47 @@
 import robcomm
-import math
 import random
 
 ROBOT_POS = "T_ROB1/Module1/position"
 ROBOT_IN_POSITION = "T_ROB1/Module1/in_position"
 
-def uri_for_variable(variable) -> str:
+def url_for_variable(variable) -> str:
     return f"/rw/rapid/symbol/RAPID/{variable}/data"
 
-class Robot:
-    IN_POSITION = uri_for_variable(ROBOT_IN_POSITION)
-    POS = uri_for_variable(ROBOT_POS)
+class Example:
+    IN_POSITION = url_for_variable(ROBOT_IN_POSITION)
+    POS = url_for_variable(ROBOT_POS)
 
-    position = [0, 0, 0]
+    # This function is called when a message is received for any of the subscribed variables
+    def on_message(self, robcomm: robcomm.Robot, variable_url: str, value):
+        match variable_url:
+            case Example.IN_POSITION:
+                if value == "FALSE":
+                    # Ignore the message if the robot is not in position
+                    print("Robot is moving")
+                    return
+                if value == "TRUE":
+                    new_pos = robcomm.get_rapid_variable(variable=ROBOT_POS)
+                    print(f"Robot is in position {new_pos}")
+                
+                # Create new random x, y and z values
+                x = 100 + random.random() * 300
+                y = 100 + random.random() * 300
+                z = 0 + random.random() * 300
 
-    def on_message(self, robcomm: robcomm.Robot, variable: str, value):
-        match variable:
-            case Robot.IN_POSITION:
-                    robcomm.set_rapid_variable(ROBOT_IN_POSITION, False)
-                    self.position = [self.position[0] + 1, self.position[1] + 1, 0]
-                    # x and y values are between 100 and 400
-                    x = 100 + random.random() * 300
-                    y = 100 + random.random() * 300
-                    # Set the position variable in the robot
-                    robcomm.set_rapid_variable(ROBOT_POS, f"[{x}, {y}, {self.position[2]}]")
-            case Robot.POS:
-                print(f"Position {variable} changed to {value}")
+                # Set the updated position in the robot
+                robcomm.set_rapid_variable(ROBOT_POS, f"[{x}, {y}, {z}]")
+                
+                # Signal that the robot is not in position
+                robcomm.set_rapid_variable(ROBOT_IN_POSITION, False)
+            case Example.POS:
+                print(f"Position {variable_url} changed to {value}, {robcomm.ip}")
 
 if __name__ == '__main__':
-    # Port needs to be configured
-    rob = robcomm.Robot(ip='127.0.0.1', port=9933)
-    robot = Robot()
-    rob.subscribe([ROBOT_IN_POSITION, ROBOT_POS], on_message=robot.on_message)
+    # Create a connection to the robot
+    robot = robcomm.Robot(ip='127.0.0.1', port=9933)
+    # Create a local example object to handle the messages
+    example = Example()
+    # Subscribe to the in_position and position variables, and call the on_message function when a message is received
+    robot.subscribe([ROBOT_IN_POSITION, ROBOT_POS], example.on_message)
     
 
