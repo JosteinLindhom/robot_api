@@ -192,10 +192,14 @@ class Robot:
         """
         self.__POST("/rw/rapid/symbol/RAPID/" + variable + "/data?mastership=implicit", data={"value": value})
 
-    def get_rapid_variable(self, url=None, variable=None) -> tuple:
+    def get_rapid_variable(self, url=None, variable=None) -> str:
         if url is None:
             url = "/rw/rapid/symbol/RAPID/" + variable + "/data"
-        return self.__GET(url)
+        response, code = self.__GET(url)
+        if code == 200:
+            return response["state"][0]["value"]
+        logger.error(f"Could not get variable {url}, code: {code}")
+        return None
 
     def request_mastership(self):
         """Request mastership on all domains."""
