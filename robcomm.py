@@ -40,6 +40,8 @@ class RobWebSocketClient(WebSocketClient):
         logger.info('Opened Websocket')
 
     def closed(self, code, reason=None):
+        self.api.logout()
+        self.close_connection()
         logger.info('Closed Websocket')
 
     def received_message(self, message: TextMessage):
@@ -58,16 +60,18 @@ class RobWebSocketClient(WebSocketClient):
             self.on_message(self.api, url, value)
 
     def start(self):
-        self.connect()
-        if self.on_message:
-            # Get initial values for all variables when connection is established
-            # and call on_message for each variable
-            for variable in self.variables:
-                url = f"/rw/rapid/symbol/RAPID/{variable}/data"
-                resp, code = self.api.get_rapid_variable(variable=variable)
-                value = resp['state'][0]['value']
-                self.on_message(self.api, url, value)
-        self.run_forever()
+        try:
+            self.connect()
+            if self.on_message:
+                # Get initial values for all variables when connection is established
+                # and call on_message for each variable
+                for variable in self.variables:
+                    url = f"/rw/rapid/symbol/RAPID/{variable}/data"
+                    value = self.api.get_rapid_variable(variable=variable)
+                    self.on_message(self.api, url, value)
+            self.run_forever()
+        finally:
+            self.close()
 
 class Robot:
     def __init__(self, ip="152.94.0.228", user='Default User', pwd='robotics', port=443, proto='https://'):
@@ -124,6 +128,10 @@ class Robot:
             ABBCX = resp.cookies['ABBCX']
             self.cookie = f'-http-session-={session}; ABBCX={ABBCX}'
             logger.info('Cookie: %s', self.cookie)
+
+    def logout(self):
+        _, code = self.__GET('/logout')
+        logger.info(f"Logout: {code}")
 
     def list_rapid_variables(self):
         ...
